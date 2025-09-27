@@ -1,0 +1,5 @@
+py-cord
+firebase-admin
+flask
+flask-cors
+aiohttp
