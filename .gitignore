@@ -1,0 +1,24 @@
+# ----- Geheimnisse / Config -----
+/etc/
+
+# ----- Python -----
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# ----- Virtual Environments -----
+.venv/
+venv/
+env/
+ENV/
+
+# ----- VS Code -----
+.vscode/
+*.code-workspace
+
+# ----- Sonstiges -----
+.DS_Store
+Thumbs.db
