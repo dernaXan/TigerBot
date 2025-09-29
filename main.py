@@ -50,6 +50,7 @@ async def on_ready():
     bot.add_view(SupportTicketView())
     bot.add_view(SettingsView())
     bot.add_view(TicketView())
+    bot.add_view(PollView)  # Register PollView for persistent views
     print(f'Logged in as {bot.user.name}')
 
 @bot.event
