@@ -3,6 +3,8 @@ from discord.ext import commands
 import firebase
 import os
 import dotenv
+import random
+import string
 
 cred_path = 'etc/secrets/db_key.json' 
 db_url = 'https://tiger-a3c02-default-rtdb.europe-west1.firebasedatabase.app/'
@@ -17,7 +19,8 @@ server_defaults = {
         "level_up_message": "Congratulations {user}, you've reached level {level}!"
     },
     "create_vc": 0,
-    "supporter_role": 0
+    "supporter_role": 0,
+    "polls": {"_init": True}
 }
 user_defaults = {
     "level": 0,
@@ -44,6 +47,9 @@ async def on_ready():
     print('Logged into Database!')
     synced = await bot.sync_commands()
     print(f'Synced commands!')
+    bot.add_view(SupportTicketView())
+    bot.add_view(SettingsView())
+    bot.add_view(TicketView())
     print(f'Logged in as {bot.user.name}')
 
 @bot.event
@@ -116,7 +122,8 @@ async def on_message(message):
                     if channel:
                         text = levels_config.get("level_up_message", "Congratulations {user}, you've reached level {level}({xp} XP)!")
                         text = text.replace("{user}", message.author.mention).replace("{level}", str(new_level)).replace("{xp}", str(new_xp))
-                        await channel.send(text)
+                        embed = discord.Embed(title="Level Up!", description=text, color=discord.Color.gold())
+                        await channel.send(embed=embed)
 
                 level_roles = levels_config.get("level_roles", {})
                 role_id = level_roles.get(str(new_level), None)
@@ -248,20 +255,23 @@ class VCChannel_Select(discord.ui.Select):
 class VCSettingsView(discord.ui.View):
     def __init__(self, channels):
         super().__init__(timeout=None)
-        options = [
-            discord.SelectOption(label="Disable", value="0"),
+        options = [discord.SelectOption(label="Disable", value="0")] + [
             discord.SelectOption(label=ch.name, value=str(ch.id))
             for ch in channels if isinstance(ch, discord.VoiceChannel)
         ]
+
         self.add_item(VCChannel_Select(options))
 
 class SettingsView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
     @discord.ui.select(
         placeholder="Select a settings category",
         options=[
             discord.SelectOption(label="Levels", description="Configure leveling settings"),
             discord.SelectOption(label="Create VC", description="Configure voice channel settings"),
-        ]
+        ],
+        custom_id="settings:select"
     )
     async def select_callback(self, select, interaction):
         if select.values[0] == "Levels":
@@ -275,11 +285,12 @@ class SettingsView(discord.ui.View):
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 @bot.slash_command(name="settings", description="View or change server settings")
+@commands.has_permissions(administrator=True)
 async def settings(ctx):
-    await ctx.defer()
+    await ctx.defer(ephemeral=True)
     embed = discord.Embed(title="Server Settings", description="Select a category to view or change settings.")
     view = SettingsView()
-    await ctx.respond(embed=embed, view=view, ephemeral=True)
+    await ctx.respond(embed=embed, view=view)
 
 @bot.slash_command(name="set_xp_per_message", description="Set the amount of XP users gain per message")
 @commands.has_permissions(administrator=True)
@@ -373,27 +384,32 @@ async def set_level_role(ctx, level: int, role: discord.Role):
     await ctx.respond(f"Role {role.name} will be assigned to users when they reach level {level}.", ephemeral=True)
 
 class TicketView(discord.ui.View):
-    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.red)
+    def __init__(self):
+        super().__init__(timeout=None)
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.red, custom_id="ticket:close")
     async def close_ticket(self, button, interaction):
         await interaction.response.send_message("Closing ticket...", ephemeral=True)
         await interaction.channel.delete()
 
 class SupportTicketView(discord.ui.View):
-    @discord.ui.button(label="Create Ticket", style=discord.ButtonStyle.green)
+    def __init__(self):
+        super().__init__(timeout=None)
+    @discord.ui.button(label="Create Ticket", style=discord.ButtonStyle.green, custom_id="ticket:create")
     async def create_ticket(self, button, interaction):
+        await interaction.response.defer(ephemeral=True)
         if not firebase_db.get(f"servers/{interaction.guild.id}/data/supporter_role"):
             await interaction.response.send_message("Support tickets are not configured on this server.", ephemeral=True)
             return
         supporter_role_id = firebase_db.get(f"servers/{interaction.guild.id}/data/supporter_role")
         supporter_role = interaction.guild.get_role(supporter_role_id)
         if not supporter_role:
-            await interaction.response.send_message("Supporter role not found. Please contact an administrator.", ephemeral=True)
+            await interaction.followup.send("Supporter role not found. Please contact an administrator.", ephemeral=True)
             return
         channel = interaction.channel
         user = interaction.user
         for thread in channel.threads:
             if thread.name == f"ticket-{user.name}".lower():
-                await interaction.response.send_message(f"You already have an open ticket in this channel: {thread.mention}", ephemeral=True)
+                await interaction.followup.send(f"You already have an open ticket in this channel: {thread.mention}", ephemeral=True)
                 return
             
         ticket_thread = await channel.create_thread(name=f"ticket-{user.name}".lower(), type=discord.ChannelType.private_thread, invitable=False)
@@ -403,7 +419,176 @@ class SupportTicketView(discord.ui.View):
         embed = discord.Embed(title="Support Ticket", description="A supporter will be with you shortly. To close this ticket, press the button below.", color=discord.Color.blue())
         view = TicketView()
         await ticket_thread.send(f"{user.mention}, your ticket has been created.\n{supporter_role.mention}", embed=embed, view=view)
+        await interaction.followup.send(f"Your ticket has been created: {ticket_thread.mention}", ephemeral=True)
         
+@bot.slash_command(name="setup_support", description="Setup support tickets in the current channel")
+@commands.has_permissions(administrator=True)
+async def setup_support(ctx, supporter_role: discord.Role):
+    await ctx.defer(ephemeral=True)
+    server_path = f"servers/{ctx.guild.id}"
+    server_data = firebase_db.get(server_path)
+    if not server_data:
+        firebase_db.set(server_path, {"data": server_defaults, "users": {"_init": True}})
+        server_data = {"data": server_defaults}
+
+    firebase_db.update(f"{server_path}/data", {"supporter_role": supporter_role.id})
+    embed = discord.Embed(title="Support Tickets", description="Click the button below to create a support ticket.", color=discord.Color.green())
+    view = SupportTicketView()
+    await ctx.channel.send(embed=embed, view=view)
+    await ctx.respond("Support ticket system has been set up in this channel.", ephemeral=True)
+
+@bot.slash_command(name="delete_all_messages", description="Delete all messages in the current channel (Staff only)")
+@commands.has_permissions(manage_messages=True)
+async def delete_all_messages(ctx, confirm: bool, delete_pinned: bool = False):
+    await ctx.defer(ephemeral=True)
+    if confirm is not True:
+        await ctx.respond("You must confirm the deletion by setting `confirm` to true.", ephemeral=True)
+        return
+    def is_not_pinned(message):
+        return not message.pinned
+    deleted = await ctx.channel.purge(check=(is_not_pinned if not delete_pinned else None))
+    await ctx.respond(f"Deleted {len(deleted)} messages.", ephemeral=True)
+
+def build_bar(count: int, total: int) -> str:
+    if total == 0:
+        return "---------- 0%"
+    percent = count / total
+    filled = int(percent * 10)
+    bar = "#" * filled + "-" * (10 - filled)
+    return f"{bar} {int(percent * 100)}%"
+
+
+class PollSelect(discord.ui.Select):
+    def __init__(self, poll_id, options):
+        self.poll_id = poll_id
+        super().__init__(
+            placeholder="Vote for an option...",
+            options=[discord.SelectOption(label=opt, value=str(i)) for i, opt in enumerate(options)],
+            custom_id=f"poll:select:{poll_id}"
+        )
+
+    async def update_poll_message(self, interaction: discord.Interaction):
+        guild_id = str(interaction.guild.id)
+        poll_data = firebase_db.get(f"servers/{guild_id}/polls/{self.poll_id}")
+        if not poll_data:
+            return
+
+        options = poll_data.get("options", [])
+        votes = poll_data.get("votes", {})
+        total_votes = len(votes)
+
+        desc = ""
+        for i, opt in enumerate(options):
+            count = sum(1 for v in votes.values() if v == i)
+            desc += f"{i+1}. {opt}: `{build_bar(count, total_votes)}`\n"
+
+        embed = discord.Embed(
+            title=f"Anonymous Poll",
+            description=desc,
+            color=discord.Color.blue()
+        )
+        await interaction.message.edit(embed=embed, view=self.view)
+
+    async def callback(self, interaction: discord.Interaction):
+        guild_id = str(interaction.guild.id)
+        user_id = str(interaction.user.id)
+
+        poll_data = firebase_db.get(f"servers/{guild_id}/polls/{self.poll_id}")
+        if not poll_data:
+            await interaction.response.send_message("Poll not found.", ephemeral=True)
+            return
+
+        votes = poll_data.get("votes", {})
+        votes[user_id] = int(self.values[0])
+        firebase_db.update(f"servers/{guild_id}/polls/{self.poll_id}", {"votes": votes})
+
+        await self.update_poll_message(interaction)
+        await interaction.response.send_message("Your vote has been recorded.", ephemeral=True)
+
+
+class PollView(discord.ui.View):
+    def __init__(self, poll_id, options):
+        super().__init__(timeout=None)
+        self.add_item(PollSelect(poll_id, options))
+        self.poll_id = poll_id
+
+    @discord.ui.button(label="Show my vote", style=discord.ButtonStyle.blurple, custom_id="poll:showvote")
+    async def show_vote(self, button, interaction: discord.Interaction):
+        guild_id = str(interaction.guild.id)
+        user_id = str(interaction.user.id)
+
+        poll_data = firebase_db.get(f"servers/{guild_id}/polls/{self.poll_id}")
+        if not poll_data:
+            await interaction.response.send_message("Poll not found.", ephemeral=True)
+            return
+
+        votes = poll_data.get("votes", {})
+        options = poll_data.get("options", [])
+
+        if user_id not in votes:
+            embed = discord.Embed(title="Your vote", description="You haven't voted yet.", color=discord.Color.red())
+        else:
+            choice_index = votes[user_id]
+            total_votes = len(votes)
+            description = f"You voted for: **{options[choice_index]}**\n\n"
+            for i, opt in enumerate(options):
+                count = sum(1 for v in votes.values() if v == i)
+                description += f"{i+1}. {opt}: `{build_bar(count, total_votes)}`\n"
+            embed = discord.Embed(title="Your vote", description=description, color=discord.Color.green())
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Remove my vote", style=discord.ButtonStyle.red, custom_id="poll:removevote")
+    async def remove_vote(self, button, interaction: discord.Interaction):
+        guild_id = str(interaction.guild.id)
+        user_id = str(interaction.user.id)
+
+        poll_data = firebase_db.get(f"servers/{guild_id}/polls/{self.poll_id}")
+        if not poll_data:
+            await interaction.response.send_message("Poll not found.", ephemeral=True)
+            return
+
+        votes = poll_data.get("votes", {})
+        if user_id in votes:
+            del votes[user_id]
+            firebase_db.update(f"servers/{guild_id}/polls/{self.poll_id}", {"votes": votes})
+            await self.children[2].update_poll_message(interaction)  # <-- PollSelect
+            await interaction.response.send_message("Your vote has been removed.", ephemeral=True)
+        else:
+            await interaction.response.send_message("You haven't voted yet.", ephemeral=True)
+
+@bot.slash_command(name="create_poll", description="Create an anonymous poll")
+@commands.has_permissions(manage_messages=True) 
+async def create_poll(ctx, question: str, options: str):
+    await ctx.defer(ephemeral=True)
+    options_list = [opt.strip() for opt in options.split(",") if opt.strip()]
+    if len(options_list) < 2 or len(options_list) > 10:
+        await ctx.respond("You must provide between 2 and 10 options, separated by commas.", ephemeral=True)
+        return
+
+    poll_id = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+    guild_id = str(ctx.guild.id)
+
+    firebase_db.update(f"servers/{guild_id}/polls", {
+        poll_id: {
+            "question": question,
+            "options": options_list,
+            "votes": {}
+        }
+    })
+
+    desc = ""
+    for i, opt in enumerate(options_list):
+        desc += f"{i+1}. {opt}: `---------- 0%`\n"
+
+    embed = discord.Embed(
+        title=f"Anonymous Poll: {question}",
+        description=desc,
+        color=discord.Color.blue()
+    )
+    view = PollView(poll_id, options_list)
+    await ctx.channel.send(embed=embed, view=view)
+    await ctx.respond("Poll has been created.", ephemeral=True)
 
 if __name__ == '__main__':
     if not TOKEN:
