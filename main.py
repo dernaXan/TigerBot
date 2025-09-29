@@ -52,7 +52,7 @@ async def on_ready():
     bot.add_view(SupportTicketView())
     bot.add_view(SettingsView())
     bot.add_view(TicketView())
-    bot.add_view(PollView())  # Register PollView for persistent views
+    bot.add_view(PollView(None, []))  # Register PollView for persistent views
     print(f'Logged in as {bot.user.name}')
 
 @bot.event
@@ -593,7 +593,27 @@ async def create_poll(ctx, question: str, options: str):
     await ctx.channel.send(embed=embed, view=view)
     await ctx.respond("Poll has been created.", ephemeral=True)
 
-if __name__ == '__main__':
+from flask import Flask
+import threading
+
+# Flask App
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot is running!", 200
+
+
+def run_discord():
     if not TOKEN:
         raise ValueError("BOT_TOKEN not found in environment!")
     bot.run(TOKEN)
+
+
+if __name__ == '__main__':
+    # Discord-Bot in einem zweiten Thread starten
+    bot_thread = threading.Thread(target=run_discord, daemon=True)
+    bot_thread.start()
+
+    # Flask läuft im Main Thread
+    app.run(host="0.0.0.0", port=os.getenv("PORT", 10000))
