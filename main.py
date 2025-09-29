@@ -31,8 +31,10 @@ user_defaults = {
 try:
     dotenv.load_dotenv('etc/secrets/secrets.env')
 except:
+    pass
+
+if os.getenv('PYTHON_VERSION') is not None:
     cred_path = '/etc/secrets/db_key.json'
-    print("It seems that we're running in a production environment.", flush=True)
 
 TOKEN = os.getenv('BOT_TOKEN')
 firebase_db = firebase.FirebaseDB(db_url, cred_path, server_defaults, user_defaults)
