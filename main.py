@@ -27,15 +27,15 @@ user_defaults = {
     "xp": 0,
     "last_message_time": 0
 }
-firebase_db = firebase.FirebaseDB(db_url, cred_path, server_defaults, user_defaults)
 
 try:
     dotenv.load_dotenv('etc/secrets/secrets.env')
 except:
-    print("It seems that we're running in a production environment.")
+    cred_path = '/etc/secrets/db_key.json'
+    print("It seems that we're running in a production environment.", flush=True)
 
 TOKEN = os.getenv('BOT_TOKEN')
-
+firebase_db = firebase.FirebaseDB(db_url, cred_path, server_defaults, user_defaults)
 intents = discord.Intents.default()
 intents.message_content = True  # Enable access to message content
 
