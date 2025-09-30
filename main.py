@@ -472,6 +472,8 @@ class PollSelect(discord.ui.Select):
 
     async def update_poll_message(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id)
+        if not self.poll_id:
+            self.poll_id = interaction.message.embeds[0].footer.text
         poll_data = firebase_db.get(f"servers/{guild_id}/polls/{self.poll_id}")
         if not poll_data:
             return
@@ -479,6 +481,7 @@ class PollSelect(discord.ui.Select):
         options = poll_data.get("options", [])
         votes = poll_data.get("votes", {})
         total_votes = len(votes)
+        question = poll_data.get("question", "Poll")
 
         desc = ""
         for i, opt in enumerate(options):
@@ -486,10 +489,11 @@ class PollSelect(discord.ui.Select):
             desc += f"{i+1}. {opt}: `{build_bar(count, total_votes)}`\n"
 
         embed = discord.Embed(
-            title=f"Anonymous Poll",
+            title=f"Anonymous Poll: {question}",
             description=desc,
             color=discord.Color.blue()
         )
+        embed.set_footer(text=self.poll_id)
         await interaction.message.edit(embed=embed, view=self.view)
 
     async def callback(self, interaction: discord.Interaction):
@@ -589,6 +593,7 @@ async def create_poll(ctx, question: str, options: str):
         description=desc,
         color=discord.Color.blue()
     )
+    embed.set_footer(text=poll_id)
     view = PollView(poll_id, options_list)
     await ctx.channel.send(embed=embed, view=view)
     await ctx.respond("Poll has been created.", ephemeral=True)
