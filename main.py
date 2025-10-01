@@ -174,7 +174,6 @@ async def on_voice_state_update(member, before, after):
 
     # Prüfen, ob ein Auto-VC leer ist → löschen
     if before.channel is not None and len(before.channel.members) == 0:
-        # Nur löschen, wenn es ein Auto-VC ist
         if before.channel.name.endswith("'s VC"):
             await before.channel.delete()
 
