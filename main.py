@@ -478,7 +478,7 @@ class PollSelect(discord.ui.Select):
     async def update_poll_message(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id)
         if not self.poll_id:
-            self.poll_id = interaction.message.embeds[0].footer.text
+            self.poll_id = interaction.message.embeds[0].footer.text.split('|')[1].strip()
         print(self.poll_id, flush=True)
         poll_data = firebase_db.get(f"servers/{guild_id}/polls/{self.poll_id}")
         if not poll_data:
@@ -499,12 +499,15 @@ class PollSelect(discord.ui.Select):
             description=desc,
             color=discord.Color.blue()
         )
-        embed.set_footer(text=self.poll_id)
+        embed.set_footer(text=f"Votes: {total_votes} | {self.poll_id}")
         await interaction.message.edit(embed=embed, view=self.view)
 
     async def callback(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id)
         user_id = str(interaction.user.id)
+
+        if not self.poll_id:
+            self.poll_id = interaction.message.embeds[0].footer.text.split('|')[1].strip()
 
         poll_data = firebase_db.get(f"servers/{guild_id}/polls/{self.poll_id}")
         if not poll_data:
@@ -529,6 +532,9 @@ class PollView(discord.ui.View):
     async def show_vote(self, button, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id)
         user_id = str(interaction.user.id)
+
+        if not self.poll_id:
+            self.poll_id = interaction.message.embeds[0].footer.text.split('|')[1].strip()
 
         poll_data = firebase_db.get(f"servers/{guild_id}/polls/{self.poll_id}")
         if not poll_data:
@@ -555,6 +561,9 @@ class PollView(discord.ui.View):
     async def remove_vote(self, button, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id)
         user_id = str(interaction.user.id)
+
+        if not self.poll_id:
+            self.poll_id = interaction.message.embeds[0].footer.text.split('|')[1].strip()
 
         poll_data = firebase_db.get(f"servers/{guild_id}/polls/{self.poll_id}")
         if not poll_data:
@@ -599,7 +608,7 @@ async def create_poll(ctx, question: str, options: str):
         description=desc,
         color=discord.Color.blue()
     )
-    embed.set_footer(text=poll_id)
+    embed.set_footer(text=f"Votes: 0 | {poll_id}")
     view = PollView(poll_id, options_list)
     await ctx.channel.send(embed=embed, view=view)
     await ctx.respond("Poll has been created.", ephemeral=True)
