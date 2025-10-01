@@ -480,6 +480,7 @@ class PollSelect(discord.ui.Select):
         guild_id = str(interaction.guild.id)
         if not self.poll_id:
             self.poll_id = interaction.message.embeds[0].footer.text
+        print(self.poll_id, flush=True)
         poll_data = firebase_db.get(f"servers/{guild_id}/polls/{self.poll_id}")
         if not poll_data:
             return
