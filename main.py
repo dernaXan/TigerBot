@@ -52,7 +52,13 @@ async def on_ready():
     bot.add_view(SupportTicketView())
     bot.add_view(SettingsView())
     bot.add_view(TicketView())
-    bot.add_view(PollView(None, []))  # Register PollView for persistent views
+    
+    for guild in bot.guilds:
+        polls = firebase_db.get(f"servers/{guild.id}/polls") or {}
+        for poll_id, poll_data in polls.items():
+            options = poll_data.get("options", [])
+            bot.add_view(PollView(poll_id, options))
+
     print(f'Logged in as {bot.user.name}')
 
 @bot.event
@@ -145,12 +151,12 @@ async def on_voice_state_update(member, before, after):
 
     user_data = firebase_db.get(user_path)
     if not user_data:
-        firebase_db.set(user_path, user_defaults)
+        firebase_db.update(user_path, user_defaults)
         user_data = user_defaults
 
     server_data = firebase_db.get(server_path)
     if not server_data:
-        firebase_db.set(server_path, {"data": server_defaults, "users": {"_init": True}})
+        firebase_db.update(server_path, {"data": server_defaults, "users": {"_init": True}})
         server_data = {"data": server_defaults}
 
     create_vc_channel_id = server_data["data"].get("create_vc", 0)
