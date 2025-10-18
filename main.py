@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from typing import Optional
 import firebase
 import os
 import dotenv
@@ -680,6 +681,39 @@ async def rules(
             ephemeral=True
         )
 
+
+async def get_command_mention(bot_id: int, command_name: str, guild_id: Optional[int] = None):
+    """
+    Gibt eine Command-Mention wie </command_name:command_id> zurück
+    """
+    if guild_id:
+        app_commands = await bot.http.get_guild_application_commands(bot_id, guild_id)
+    else:
+        app_commands = await bot.http.get_global_application_commands(bot_id)
+
+    for cmd in app_commands:
+        if cmd["name"] == command_name:
+            return f"</{cmd['name']}:{cmd['id']}>"
+
+    return None
+
+@bot.slash_command(name="get_command", description="Erzeugt eine Command-Mention für einen anderen Bot")
+async def get_command(
+    ctx: discord.ApplicationContext,
+    bot_user: discord.Option(discord.User, "Der Bot, dessen Command du erwähnen willst"),
+    command_name: discord.Option(str, "Name des Commands"),
+    guild_id: discord.Option(int, "Optional: Guild-ID falls guild-specific", required=False)
+):
+    if not bot_user.bot:
+        await ctx.respond("❌ This User isn't a bot!")
+        return
+
+    mention = await get_command_mention(bot_user.id, command_name, guild_id)
+    if not mention:
+        await ctx.respond(f"❌ The Bot {bot_user.mention} has no Command named `{command_name}`!")
+        return
+
+    await ctx.respond(f"Command Mention: {mention}")
 
 from flask import Flask
 import threading
