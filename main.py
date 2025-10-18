@@ -52,6 +52,7 @@ async def on_ready():
     bot.add_view(SupportTicketView())
     bot.add_view(SettingsView())
     bot.add_view(TicketView())
+    bot.add_view(AcceptRulesView())
     
     for guild in bot.guilds:
         polls = firebase_db.get(f"servers/{guild.id}/polls") or {}
