@@ -613,6 +613,73 @@ async def create_poll(ctx, question: str, options: str):
     await ctx.channel.send(embed=embed, view=view)
     await ctx.respond("Poll has been created.", ephemeral=True)
 
+class AcceptRulesView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        
+    @discord.ui.button(label="✅ Accept Rules", style=discord.ButtonStyle.success, custom_id="rules:accept")
+    async def accept(self, button: discord.ui.Button, interaction: discord.Interaction):
+        guild = interaction.guild
+        member = interaction.user
+        role = discord.utils.get(guild.roles, name="Rules accepted")
+
+        if role is None:
+            role = await guild.create_role(name="Rules accepted")
+        
+        await member.add_roles(role)
+        await interaction.response.send_message(
+            "✅ Du hast die Regeln akzeptiert und bekommst jetzt Zugriff auf den Server!",
+            ephemeral=True
+        )
+
+
+@bot.slash_command(name="rules", description="Sendet das Regel-Embed mit optionaler Blind-Funktion")
+async def rules(
+    ctx: discord.ApplicationContext,
+    rulestext: str,
+    required: bool = True,
+    blind: bool = False
+):
+    guild = ctx.guild
+
+    embed = discord.Embed(
+        title="📜 Serverregeln",
+        description=rulestext,
+        color=discord.Color.green()
+    )
+
+    view = AcceptRulesView() if required else None
+    await ctx.respond(embed=embed, view=view)
+
+    role = discord.utils.get(guild.roles, name="Rules accepted")
+    if role is None:
+        role = await guild.create_role(name="Rules accepted", reason="Für verifizierte Mitglieder")
+
+    # Wenn blind aktiviert ist, verstecke alles außer den Regelkanal
+    if blind:
+        rules_channel = ctx.channel
+
+        # Regelkanal bleibt sichtbar
+        await rules_channel.set_permissions(guild.default_role, view_channel=True, send_messages=False)
+        await rules_channel.set_permissions(role, view_channel=True)
+
+        # Alle anderen Kanäle verstecken
+        for channel in guild.channels:
+            if channel.id != rules_channel.id:
+                await channel.set_permissions(guild.default_role, view_channel=False)
+                await channel.set_permissions(role, view_channel=True)
+
+        await ctx.followup.send(
+            "🔒 'Blind'-Modus aktiviert: Nur verifizierte User können andere Kanäle sehen.",
+            ephemeral=True
+        )
+    else:
+        await ctx.followup.send(
+            "📜 Regeln wurden gesendet (ohne Blind-Modus).",
+            ephemeral=True
+        )
+
+
 from flask import Flask
 import threading
 
