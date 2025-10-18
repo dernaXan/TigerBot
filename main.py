@@ -6,6 +6,7 @@ import os
 import dotenv
 import random
 import string
+import aiohttp
 
 cred_path = 'etc/secrets/db_key.json' 
 db_url = 'https://tiger-a3c02-default-rtdb.europe-west1.firebasedatabase.app/'
@@ -682,35 +683,46 @@ async def rules(
         )
 
 
-async def get_command_mention(bot_id: int, command_name: str, guild_id: Optional[int] = None):
+async def get_command_mention(bot_user_id: int, command_name: str, guild_id: Optional[int] = None):
     """
-    Gibt eine Command-Mention wie </command_name:command_id> zurück
+    Gibt eine Command-Mention wie </command_name:command_id> zurück.
     """
-    if guild_id:
-        app_commands = await bot.http.get_guild_application_commands(bot_id, guild_id)
-    else:
-        app_commands = await bot.http.get_global_application_commands(bot_id)
+    url = (
+        f"https://discord.com/api/v10/applications/{bot_user_id}/guilds/{guild_id}/commands"
+        if guild_id
+        else f"https://discord.com/api/v10/applications/{bot_user_id}/commands"
+    )
 
-    for cmd in app_commands:
+    headers = {"Authorization": f"Bot {bot.http.token}"}
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as response:
+            if response.status != 200:
+                return None
+            data = await response.json()
+
+    for cmd in data:
         if cmd["name"] == command_name:
             return f"</{cmd['name']}:{cmd['id']}>"
 
     return None
 
-@bot.slash_command(name="get_command", description="Erzeugt eine Command-Mention für einen anderen Bot")
+
+@bot.slash_command(name="get_command", description="Shows the Command Mention.")
 async def get_command(
     ctx: discord.ApplicationContext,
-    bot_user: discord.Option(discord.User, "Der Bot, dessen Command du erwähnen willst"),
-    command_name: discord.Option(str, "Name des Commands"),
-    guild_id: discord.Option(int, "Optional: Guild-ID falls guild-specific", required=False)
+    bot_user: discord.Option(discord.User, "The Commands Bot"),
+    command_name: discord.Option(str, "Name of the Commands"),
+    guild_id: discord.Option(int, "Optional: Guild-ID, falls guild-specific", required=False)
 ):
     if not bot_user.bot:
         await ctx.respond("❌ This User isn't a bot!")
         return
 
+    await ctx.defer()
     mention = await get_command_mention(bot_user.id, command_name, guild_id)
     if not mention:
-        await ctx.respond(f"❌ The Bot {bot_user.mention} has no Command named `{command_name}`!")
+        await ctx.respond(f"❌ The bot {bot_user.mention} doesn't have a command named `{command_name}`!")
         return
 
     await ctx.respond(f"Command Mention: {mention}")
