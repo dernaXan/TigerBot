@@ -640,8 +640,9 @@ class AcceptRulesView(discord.ui.View):
 async def rules(
     ctx: discord.ApplicationContext,
     rulestext: str,
-    required: bool = True,
-    blind: bool = False
+    required: bool = False,
+    blind: bool = False,
+    except_of: str = ""
 ):
     guild = ctx.guild
 
@@ -652,7 +653,7 @@ async def rules(
     )
 
     view = AcceptRulesView() if required else None
-    await ctx.respond(embed=embed, view=view)
+    await ctx.channel.send(embed=embed, view=view)
 
     role = discord.utils.get(guild.roles, name="Rules accepted")
     if role is None:
@@ -660,6 +661,20 @@ async def rules(
 
     # Wenn blind aktiviert ist, verstecke alles außer den Regelkanal
     if blind:
+        except_channels = [ec.strip() for ec in except_of.split(",")]
+        blind_excepts = []
+        for e_c in except_channels:
+            if e_c.startswith("<#") and e_c.endswith(">"):
+                channel_id = int(e_c[2:-1])
+                exc_channel = ctx.guild.get_channel(channel_id)
+            else:
+                exc_channel = discord.utils.get(ctx.guild.channels, name=e_c)
+
+            if exc_channel:
+                blind_excepts.append(exc_channel)
+
+        print(blind_excepts, flush=True)
+
         rules_channel = ctx.channel
 
         # Regelkanal bleibt sichtbar
@@ -668,64 +683,20 @@ async def rules(
 
         # Alle anderen Kanäle verstecken
         for channel in guild.channels:
-            if channel.id != rules_channel.id:
+            if channel.id != rules_channel.id and not channel.id in [exc.id for exc in blind_excepts]:
                 await channel.set_permissions(guild.default_role, view_channel=False)
                 await channel.set_permissions(role, view_channel=True)
 
-        await ctx.followup.send(
+        await ctx.respond(
             "🔒 'Blind'-Modus aktiviert: Nur verifizierte User können andere Kanäle sehen.",
             ephemeral=True
         )
     else:
-        await ctx.followup.send(
+        await ctx.respond(
             "📜 Regeln wurden gesendet (ohne Blind-Modus).",
             ephemeral=True
         )
 
-
-async def get_command_mention(bot_user_id: int, command_name: str, guild_id: Optional[int] = None):
-    """
-    Gibt eine Command-Mention wie </command_name:command_id> zurück.
-    """
-    url = (
-        f"https://discord.com/api/v10/applications/{bot_user_id}/guilds/{guild_id}/commands"
-        if guild_id
-        else f"https://discord.com/api/v10/applications/{bot_user_id}/commands"
-    )
-
-    headers = {"Authorization": f"Bot {bot.http.token}"}
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as response:
-            if response.status != 200:
-                return None
-            data = await response.json()
-
-    for cmd in data:
-        if cmd["name"] == command_name:
-            return f"</{cmd['name']}:{cmd['id']}>"
-
-    return None
-
-
-@bot.slash_command(name="get_command", description="Shows the Command Mention.")
-async def get_command(
-    ctx: discord.ApplicationContext,
-    bot_user: discord.Option(discord.User, "The Commands Bot"),
-    command_name: discord.Option(str, "Name of the Commands"),
-    guild_id: discord.Option(int, "Optional: Guild-ID, falls guild-specific", required=False)
-):
-    if not bot_user.bot:
-        await ctx.respond("❌ This User isn't a bot!")
-        return
-
-    await ctx.defer()
-    mention = await get_command_mention(bot_user.id, command_name, guild_id)
-    if not mention:
-        await ctx.respond(f"❌ The bot {bot_user.mention} doesn't have a command named `{command_name}`!")
-        return
-
-    await ctx.respond(f"Command Mention: {mention}")
 
 from flask import Flask
 import threading
