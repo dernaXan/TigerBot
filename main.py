@@ -697,6 +697,42 @@ async def rules(
             ephemeral=True
         )
 
+@bot.slash_command(name="say", description="Let the bot say something")
+async def say(ctx, text:str, embed:bool=False, title:str=""):
+    await ctx.respond("Sending Message!", ephemeral=True)
+    if embed:
+        text_embed = discord.Embed(title=title or None, description=text, color=discord.Color.random())
+        return await ctx.channel.send(embed=text_embed)
+    return await ctx.channel.send(text)
+
+@bot.slash_command(name="imitate", description="Imitate somebody")
+@commands.has_permissions(manage_messages=True)
+async def imitate(
+    ctx,
+    user: discord.Member,
+    text: str,
+    embed: bool = False,
+    title: str = ""
+):
+    await ctx.respond("Creating Imitation...", ephemeral=True)
+
+    webhook = await ctx.channel.create_webhook(
+        name=user.display_name,
+        avatar=await user.display_avatar.read()
+    )
+
+    try:
+        if embed:
+            msg_embed = discord.Embed(
+                title=title or None,
+                description=text,
+                color=discord.Color.random()
+            )
+            await webhook.send(embed=msg_embed)
+        else:
+            await webhook.send(text)
+    finally:
+        await webhook.delete()
 
 from flask import Flask
 import threading
